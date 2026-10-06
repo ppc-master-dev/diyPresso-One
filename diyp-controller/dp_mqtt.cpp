@@ -5,6 +5,9 @@
 #include "dp_reservoir.h"
 #include "dp_heater.h"
 #include "dp_settings.h"
+#include "dp_hardware.h"
+#include "dp_steam_process.h"
+#include "dp_menu.h"
 
 
 MqttDevice mqttDevice;
@@ -18,6 +21,9 @@ const char broker[] = "test.mosquitto.org";
 int port = 1883;
 char state_topic[64] = "";
 char set_topic[64] = "";
+
+#define TX_PAYLOAD_SIZE 512         // the state message outgrows the library's 256 byte default
+#define ADOPT_DELAY_MSEC (10 * 1000) // queued settings must be unchanged this long before adoption
 
 // Settings that may be changed over MQTT, keyed by their line protocol field name.
 // t_set matches the field in the state message, so a client reads back what it sets.
@@ -77,6 +83,7 @@ void MqttDevice::init()
   }
   on();
 
+  mqttClient.setTxPayloadSize(TX_PAYLOAD_SIZE);
   mqttClient.onMessage(on_message);
   if (!mqttClient.subscribe(set_topic)) {
     Serial.print("MQTT subscribe failed: ");
@@ -169,6 +176,54 @@ bool MqttDevice::queue_settings(char *line)
     return true;
 }
 
+int MqttDevice::pending_count()
+{
+    int count = 0;
+    for (int i = 0; i < NUM_SETTABLE; i++)
+        if (_pending[i])
+            count++;
+    return count;
+}
+
+/*
+ * Adopt queued settings only while the machine is idle: commissioned, no brew, no steam,
+ * nobody editing settings at the machine. Saving writes flash, which stalls the CPU, and
+ * BrewProcess reloads the setpoint from settings on every return to idle anyway.
+ * Settings edited at the machine win: an open settings menu drops what is queued.
+ */
+void MqttDevice::adopt_pending()
+{
+    if (pending_count() == 0)
+        return;
+
+    if (menu_settings_active())
+    {
+        for (int i = 0; i < NUM_SETTABLE; i++)
+            _pending[i] = false;
+        Serial.println("MQTT set dropped: settings menu is open");
+        return;
+    }
+
+    if (millis() - _pending_since < ADOPT_DELAY_MSEC)
+        return;
+    if (!settings.commissioningDone() || !brewProcess.is_idle())
+        return;
+    if (hardware.has_steam_group() && !steamProcess.is_idle())
+        return;
+
+    for (int i = 0; i < NUM_SETTABLE; i++)
+    {
+        if (_pending[i])
+        {
+            (settings.*settable[i].set)(_pending_value[i]);
+            _pending[i] = false;
+        }
+    }
+    settings.save();
+    settings.apply();
+    Serial.println("MQTT set adopted");
+}
+
 
 void MqttDevice::run() 
 {
@@ -177,6 +232,7 @@ void MqttDevice::run()
 
     // call poll() regularly to allow the library to send MQTT keep alive which avoids being disconnected by the broker
     mqttClient.poll();
+    adopt_pending();
 }
 
 void MqttDevice::prepare(const char *measurement)
@@ -237,6 +293,12 @@ void MqttDevice::send_state()
     write("w_cur", brewProcess.weight());
     write("w_end", brewProcess.end_weight());
     write("shots", (long)settings.shotCounter());
+    write("P", settings.P());
+    write("I", settings.I());
+    write("D", settings.D());
+    int pending = pending_count();
+    if (pending > 0)
+      write("pend", (long)pending);
 
     write("boil", boilerController.get_state_name());
     if (boilerController.is_error())

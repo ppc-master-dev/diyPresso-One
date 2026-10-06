@@ -20,6 +20,8 @@ class MqttDevice
       unsigned long _pending_since = 0;
       void prepare(const char *measurement);
       bool queue_settings(char *line);
+      int pending_count();
+      void adopt_pending();
     public:
       MqttDevice() { off(); }
       void on(void) { _on=true;  }
