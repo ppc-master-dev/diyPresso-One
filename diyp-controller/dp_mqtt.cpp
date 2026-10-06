@@ -17,6 +17,32 @@ MqttClient mqttClient(wifiClient);
 const char broker[] = "test.mosquitto.org";
 int port = 1883;
 char state_topic[64] = "";
+char set_topic[64] = "";
+
+// Settings that may be changed over MQTT, keyed by their line protocol field name.
+// t_set matches the field in the state message, so a client reads back what it sets.
+typedef double (DpSettings::*setter_t)(double);
+typedef struct { const char *key; setter_t set; } settable_t;
+
+static const settable_t settable[] = {
+    { "t_set", &DpSettings::temperature },
+    { "P", &DpSettings::P },
+    { "I", &DpSettings::I },
+    { "D", &DpSettings::D },
+};
+
+static int settable_index(const char *key)
+{
+    for (int i = 0; i < (int)(sizeof(settable) / sizeof(settable[0])); i++)
+        if (strcmp(key, settable[i].key) == 0)
+            return i;
+    return -1;
+}
+
+static void on_message(int size)
+{
+    mqttDevice.receive(size);
+}
 
 
 void mac_to_hex(char *hex, byte *mac)
@@ -42,6 +68,7 @@ void MqttDevice::init()
   char mac_hex[13];
   mac_to_hex(mac_hex, mac);
   snprintf(state_topic, sizeof(state_topic), "diyPressoOne/%s/state", mac_hex);
+  snprintf(set_topic, sizeof(set_topic), "diyPressoOne/%s/set", mac_hex);
 
   if (!mqttClient.connect(broker, port)) {
     Serial.print("MQTT connection failed! Error code = ");
@@ -49,6 +76,12 @@ void MqttDevice::init()
     return;
   }
   on();
+
+  mqttClient.onMessage(on_message);
+  if (!mqttClient.subscribe(set_topic)) {
+    Serial.print("MQTT subscribe failed: ");
+    Serial.println(set_topic);
+  }
   
   Serial.println("You're connected to the MQTT broker! Subscribe using mosquitto with this command:");
   
@@ -56,6 +89,84 @@ void MqttDevice::init()
   Serial.print(broker);
   Serial.print(" -t ");
   Serial.println(state_topic);
+  Serial.print("Settings are accepted on: ");
+  Serial.println(set_topic);
+}
+
+/*
+ * Read a message from the set topic, e.g. "set t_set=95.0,P=7.0".
+ * The measurement name is ignored; only the fields in settable[] are accepted.
+ */
+void MqttDevice::receive(int size)
+{
+    char line[128];
+
+    if (size <= 0 || size >= (int)sizeof(line))
+    {
+        while (mqttClient.available())
+            mqttClient.read();
+        Serial.println("MQTT set rejected: message too long");
+        return;
+    }
+    int n = mqttClient.read((uint8_t *)line, size);
+    line[n] = 0;
+    while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
+        line[--n] = 0;
+
+    Serial.print("MQTT set: ");
+    Serial.println(line);
+    if (!queue_settings(line))
+        Serial.println("MQTT set rejected");
+}
+
+/*
+ * Parse the field list strictly and queue the values: an unknown key, a value that is
+ * not a finite number, or a timestamp rejects the whole line, so a set of PID values
+ * is never applied in part. Values are clamped when they are adopted, not here.
+ */
+bool MqttDevice::queue_settings(char *line)
+{
+    double value[NUM_SETTABLE];
+    bool present[NUM_SETTABLE] = { false };
+    bool any = false;
+
+    char *fields = strchr(line, ' ');
+    if (fields == NULL)
+        return false;
+    fields++;
+    if (strchr(fields, ' ') != NULL)
+        return false;
+
+    for (char *field = strtok(fields, ","); field != NULL; field = strtok(NULL, ","))
+    {
+        char *eq = strchr(field, '=');
+        if (eq == NULL)
+            return false;
+        *eq = 0;
+        int i = settable_index(field);
+        if (i < 0)
+            return false;
+        char *end;
+        double v = strtod(eq + 1, &end);
+        if (end == eq + 1 || *end != 0 || !isfinite(v))
+            return false;
+        value[i] = v;
+        present[i] = true;
+        any = true;
+    }
+    if (!any)
+        return false;
+
+    for (int i = 0; i < NUM_SETTABLE; i++)
+    {
+        if (present[i])
+        {
+            _pending_value[i] = value[i];
+            _pending[i] = true;
+        }
+    }
+    _pending_since = millis();
+    return true;
 }
 
 
