@@ -16,7 +16,7 @@ MqttClient mqttClient(wifiClient);
 
 const char broker[] = "test.mosquitto.org";
 int port = 1883;
-char topic[64]  = "";
+char state_topic[64] = "";
 
 
 void mac_to_hex(char *hex, byte *mac)
@@ -39,8 +39,9 @@ void MqttDevice::init()
   Serial.print("Attempting to connect to the MQTT broker: ");
   Serial.println(broker);
   WiFi.macAddress(mac);
-  strcpy(topic, "diyPressoOne/");
-  mac_to_hex(topic+strlen(topic), mac);
+  char mac_hex[13];
+  mac_to_hex(mac_hex, mac);
+  snprintf(state_topic, sizeof(state_topic), "diyPressoOne/%s/state", mac_hex);
 
   if (!mqttClient.connect(broker, port)) {
     Serial.print("MQTT connection failed! Error code = ");
@@ -54,7 +55,7 @@ void MqttDevice::init()
   Serial.print("mosquitto_sub -h ");
   Serial.print(broker);
   Serial.print(" -t ");
-  Serial.println(topic);
+  Serial.println(state_topic);
 }
 
 
@@ -71,7 +72,7 @@ void MqttDevice::prepare(const char *measurement)
 {
     if (_state == MSG_START)
     {
-        mqttClient.beginMessage(topic);
+        mqttClient.beginMessage(state_topic);
         mqttClient.print("measurement ");
     }
     if (_state == MSG_NEXT)
