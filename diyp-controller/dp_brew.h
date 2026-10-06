@@ -33,6 +33,7 @@ public:
   void stop() { run(STOP); }
   void clear_error() { run(RESET); };
   bool is_error() { return in_state(&BrewProcess::state_error); }
+  bool is_idle() { return in_state(&BrewProcess::state_idle); }
   bool is_finished() { return in_state(&BrewProcess::state_finished); }
   bool is_busy() { return in_state(&BrewProcess::state_pre_infuse) || in_state(&BrewProcess::state_infuse) || in_state(&BrewProcess::state_extract); }
   bool is_warning_almost_empty() { return in_state(&BrewProcess::state_warning_pre_brew); }

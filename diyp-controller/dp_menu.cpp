@@ -606,6 +606,11 @@ void menu_ready_reset()
   ready_menu = MAIN;
 }
 
+bool menu_settings_active()
+{
+  return ready_menu == SETTINGS;
+}
+
 bool menu_ready(bool button_pressed)
 {
   static Timer saved_timer = Timer(MILLIS);
