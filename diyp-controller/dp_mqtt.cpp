@@ -9,6 +9,17 @@
 #include "dp_steam_process.h"
 #include "dp_menu.h"
 
+// Broker and credentials can be set in arduino_secrets.h (not in git, see arduino_secrets.h.example).
+#if __has_include("arduino_secrets.h")
+#include "arduino_secrets.h"
+#endif
+#ifndef SECRET_MQTT_BROKER
+#define SECRET_MQTT_BROKER "test.mosquitto.org"
+#endif
+#ifndef SECRET_MQTT_PORT
+#define SECRET_MQTT_PORT 1883
+#endif
+
 
 MqttDevice mqttDevice;
 
@@ -17,8 +28,8 @@ WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
 
-const char broker[] = "test.mosquitto.org";
-int port = 1883;
+const char broker[] = SECRET_MQTT_BROKER;
+int port = SECRET_MQTT_PORT;
 char state_topic[64] = "";
 char set_topic[64] = "";
 
@@ -76,6 +87,9 @@ void MqttDevice::init()
   snprintf(state_topic, sizeof(state_topic), "diyPressoOne/%s/state", mac_hex);
   snprintf(set_topic, sizeof(set_topic), "diyPressoOne/%s/set", mac_hex);
 
+#ifdef SECRET_MQTT_USER
+  mqttClient.setUsernamePassword(SECRET_MQTT_USER, SECRET_MQTT_PASS);
+#endif
   if (!mqttClient.connect(broker, port)) {
     Serial.print("MQTT connection failed! Error code = ");
     Serial.println(mqttClient.connectError());
