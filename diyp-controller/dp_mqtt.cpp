@@ -35,6 +35,7 @@ char set_topic[64] = "";
 
 #define TX_PAYLOAD_SIZE 512         // the state message outgrows the library's 256 byte default
 #define ADOPT_DELAY_MSEC (10 * 1000) // queued settings must be unchanged this long before adoption
+#define STATE_INTERVAL_MSEC 1000     // period of the state message
 
 // Settings that may be changed over MQTT, keyed by their line protocol field name.
 // t_set matches the field in the state message, so a client reads back what it sets.
@@ -296,7 +297,7 @@ void MqttDevice::send()
 void MqttDevice::send_state()
 {
   static unsigned long prev_time = millis();
-  if (millis() - prev_time > 5000)
+  if (millis() - prev_time > STATE_INTERVAL_MSEC)
   {
     write("t_set", boilerController.set_temp());
     write("t_act", boilerController.act_temp());
