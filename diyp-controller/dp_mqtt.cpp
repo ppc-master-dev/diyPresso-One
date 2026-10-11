@@ -48,6 +48,9 @@ static const settable_t settable[] = {
     { "I", &DpSettings::I },
     { "D", &DpSettings::D },
 };
+// The pending-value arrays are sized by NUM_SETTABLE; a longer table would write past them.
+static_assert(sizeof(settable) / sizeof(settable[0]) == MqttDevice::NUM_SETTABLE,
+              "settable[] and MqttDevice::NUM_SETTABLE differ");
 
 static int settable_index(const char *key)
 {

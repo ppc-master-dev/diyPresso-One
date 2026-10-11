@@ -10,11 +10,12 @@
 
 class MqttDevice
 {
+    public:
+      static const int NUM_SETTABLE = 4; // entries in settable[] (dp_mqtt.cpp), checked there
     private:
       bool _on=false;
       enum mqtt_state_t { MSG_START, MSG_NEXT };
       mqtt_state_t _state = MSG_START;
-      static const int NUM_SETTABLE = 4;
       double _pending_value[NUM_SETTABLE];
       bool _pending[NUM_SETTABLE] = { false };
       unsigned long _pending_since = 0;
